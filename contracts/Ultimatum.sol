@@ -1,146 +1,120 @@
 pragma solidity >=0.5.2;
 
-import './SafeMath.sol'; 
-// TODO: Create connection deadline. Deposit goes to user who made it further in the game
-// TODO: moveTimeline should be measured in blocks
 
-
-contract Ultimatum { 
-    using SafeMath for uint256; 
-
-    address public owner; 
-    enum GameState { Uninitialized, FirstMove, SecondMove }
-    // ------------------------------------------------------------------------
-    //  Boolean storage representing pairing requests and connections
-    // ------------------------------------------------------------------------
-    mapping (bytes32 => bool) public requested;
-    mapping (bytes32 => bool) public connected;
-    mapping (bytes32 => uint) public offer; 
-    mapping (bytes32 => uint) public deadline; 
-    mapping (bytes32 => GameState) public gameState; 
+// TODO: get gas refund for userPicks
+// The size must now be adjusted within the type before the conversion. For example, you can convert a bytes4 (4 bytes) to a uint64 (8 bytes) by first converting the bytes4 variable to bytes8 and then to uint64. You get the opposite padding when converting through uint3
+contract Ultimatum {
 
 
 
-    mapping (address => uint) public owed; 
+    uint public wager = 10**17;      // .1 Ether
+    uint8 public lotteryLength = 10;     // Length of lottery in blocks
+    uint8 public timeToRespond = 10;   // Time given to make move in blocks
 
-    uint public moveTimeline = uint(60400);   // One day
-    uint public wager = 10**17;      // .1 ether 
 
-    constructor() 
-    public { 
-        owner = msg.sender; 
+    mapping (address => uint) public owed;       // Amount WEI owed to user
+
+    bytes32 public blockhashresult;
+    uint public blockhashnumber;
+    uint public randomnumber;
+
+    address public owner;
+
+    struct Game { 
+        address proposer;
+        address responder; 
+        uint256 offer;
+        uint256 resultBlock;   // Starting block
+        uint256 acceptDeadline;   // block number to accept by
+        uint256 money; 
     }
 
-    function broadcastPlayer()
-    public { 
-        emit LogWantingToPlay(msg.sender); 
-    }
+    uint256 public gameNonce = 1;
+
+    mapping (uint256 => Game) public games; 
+    
+    address[] public committed; 
 
 
-    // ------------------------------------------------------------------------
-    //  Request a pairing with address _to
-    // Execution cost: 23965
-    // ------------------------------------------------------------------------
-    function requestMatch(address _to)
-    public 
-    payable {
-        require(msg.value == wager); 
-        bytes32 pairHash = getPairHash(msg.sender, _to);
-        require(!connected[pairHash]);
-        requested[keccak256(abi.encodePacked(pairHash, msg.sender))] = true;
-        deadline[keccak256(abi.encodePacked(pairHash, _to))] = now.add(moveTimeline*10); 
-        emit LogGameRequest(_to, msg.sender);
-    }
-
-    // ------------------------------------------------------------------------
-    //  User can agree to start a match with _from
-    // TODO: ecRecover() signature of intent to play. Avoid having to call requestMatch()
-    // ------------------------------------------------------------------------
-    function firstOfferOffChain(address _from, uint _offer)
-    public 
-    payable {
-        require(msg.value == wager); 
-        require(_offer > 0 && _offer < wager); 
-        bytes32 pairHash = getPairHash(msg.sender, _from);
-        require(requested[keccak256(abi.encodePacked(pairHash, _from))]);
-        delete requested[keccak256(abi.encodePacked(pairHash, _from))];
-        connected[pairHash] = true;
-        deadline[pairHash] = moveTimeline.add(now); 
-        bytes32 offerHash = keccak256(abi.encodePacked(pairHash, msg.sender)); 
-        offer[offerHash] = _offer; 
-        gameState[pairHash] = GameState.FirstMove; 
-        emit LogNewGame(pairHash, _from, msg.sender, _offer);
-    }
-
-    // ------------------------------------------------------------------------
-    //  User can agree to start a match with _from
-    // Execution cost: 50588
-    // ------------------------------------------------------------------------
-    function firstOffer(address _from, uint _offer)
-    public 
-    payable {
-        require(msg.value == wager); 
-        require(_offer > 0 && _offer <= wager); 
-        bytes32 pairHash = getPairHash(msg.sender, _from);
-        require(requested[keccak256(abi.encodePacked(pairHash, _from))]);
-        delete requested[keccak256(abi.encodePacked(pairHash, _from))];
-        connected[pairHash] = true;
-        deadline[pairHash] = moveTimeline.add(now); 
-        bytes32 offerHash = keccak256(abi.encodePacked(pairHash, msg.sender)); 
-        offer[offerHash] = _offer; 
-        gameState[pairHash] = GameState.FirstMove; 
-        emit LogNewGame(pairHash, _from, msg.sender, _offer);
-    }
-
-    // ------------------------------------------------------------------------
-    //  User who initiated game can now accept or deny the offer and create an offer of their own
-    // Execution cost: 69873
-    // ------------------------------------------------------------------------
-    function secondOffer(address _to, uint _responseOffer, bool _accept)
-    public { 
-        require(_responseOffer > 0 && _responseOffer <= wager);  
-        bytes32 pairHash = getPairHash(msg.sender, _to); 
-        bytes32 opponentHash = keccak256(abi.encodePacked(pairHash, _to));
-        bytes32 playerHash = keccak256(abi.encodePacked(pairHash, msg.sender));
-        require(gameState[pairHash] == GameState.FirstMove); 
-        require(connected[pairHash]); 
-        gameState[pairHash] = GameState.SecondMove; 
-        require(offer[opponentHash] > 0);
-        uint deal = offer[opponentHash]; 
-        delete offer[opponentHash]; 
-        if (_accept) { 
-            owed[msg.sender] = owed[msg.sender].add(deal); 
-            owed[_to] = owed[_to].add(wager.sub(deal)); 
-        }
-        else owed[owner] = owed[owner].add(wager); 
-        offer[playerHash] = _responseOffer; 
-        emit LogOfferReturned(pairHash, msg.sender, _responseOffer, _accept, deal); 
-    }
-
-    // ------------------------------------------------------------------------
-    //  User who accepted game can accept the offer or deny it
-    // Execution cost: 12594
-    // ------------------------------------------------------------------------
-    function finishGame(address _to, bool _accept)
+    constructor()
     public {
-        bytes32 pairHash = getPairHash(msg.sender, _to);
-        require (gameState[pairHash] == GameState.SecondMove); 
-        bytes32 opponentHash = keccak256(abi.encodePacked(pairHash, _to));    // Offer for address _to
-        require(connected[pairHash]);
-        delete connected[pairHash];
-        uint deal = offer[opponentHash]; 
-        delete offer[opponentHash]; 
-        delete gameState[pairHash]; 
-        if (_accept) { 
-            owed[msg.sender] = owed[msg.sender].add(deal); 
-            owed[_to] = owed[_to].add(wager.sub(deal)); 
+        owner = msg.sender;
+        startGame(); 
+    }
+
+
+    // @notice When Lottery is live, users can submit picks here
+    function play()
+    public
+    payable {
+        require(msg.value == wager, "minimum bet not sent");
+        Game storage currentGame = games[gameNonce]; 
+        // Has lottery expired?
+        if (currentGame.resultBlock <= block.number){
+            startGame(); 
+        }
+        games[gameNonce].money += msg.value; 
+        committed.push(msg.sender); 
+        // TODO: emit event
+    }
+
+    function startGame()
+    public {
+        Game storage currentGame = games[gameNonce]; 
+        require(currentGame.resultBlock <= block.number, "LOTTERY NOT STARTED OR FINISHED");
+        // Not enough people waiting? 
+        if (committed.length < 2){
+            // Extend lottery period
+            currentGame.resultBlock = block.number + lotteryLength; 
+            // TODO: emit event
+        }
+        else {
+            // Get blockhash of result block
+            bytes32 lastNumbers = blockhash(currentGame.resultBlock);
+            blockhashresult = lastNumbers; 
+            uint256 number = uint256(lastNumbers); 
+            blockhashnumber = number;
+            uint256 rando = number % committed.length;
+            randomnumber = rando; 
+            currentGame.proposer = committed[rando];
+            rando == 0 ? rando = rando + 1 : rando = rando -1; 
+            currentGame.responder = committed[rando]; 
+            emit LogNewGame(gameNonce, currentGame.proposer, currentGame.responder); 
+            delete committed;
+            gameNonce++;     
+            games[gameNonce].resultBlock = block.number + lotteryLength; 
+        }
+    }
+
+
+    function makeOffer(uint256 nonce, uint256 offer)
+    public {
+        Game storage thisGame = games[nonce];
+        require(thisGame.offer == 0, "OFFER ALREADY MADE"); 
+        require(offer > 0 && offer <= thisGame.money, "WRONG OFFER VALUE"); 
+        require(msg.sender == thisGame.proposer, "MUST BE PROPOSER"); 
+        require(block.number < (thisGame.resultBlock + timeToRespond), "DIDNT MAKE OFFER IN TIME"); 
+        thisGame.offer = offer;
+        thisGame.acceptDeadline = block.number + timeToRespond;
+    }
+
+    function finishGame(uint256 nonce, bool acceptOffer)
+    public {
+        Game storage thisGame = games[nonce];
+        require(thisGame.offer != 0, "OFFER NOT MADE YET"); 
+        require(block.number < thisGame.acceptDeadline, "DIDNT RESPOND IN TIME");
+        require(msg.sender == thisGame.responder, "MUST BE RESPONDER"); 
+        emit LogGameFinished(nonce, acceptOffer);
+        if (acceptOffer) { 
+            owed[msg.sender] += thisGame.offer; 
+            owed[thisGame.proposer] += thisGame.money - thisGame.offer; 
+            delete games[nonce]; 
         }
         else { 
-            owed[owner] = owed[owner].add(wager); 
+            owed[owner] += thisGame.money; 
+            delete games[nonce]; 
         }
-        emit LogGameFinished(pairHash, msg.sender, _accept, deal); 
     }
-
 
     function withdraw()
     public { 
@@ -151,84 +125,57 @@ contract Ultimatum {
     }
 
 
-    // @dev Game can end at 4 places: requestMatch(), firstOffer(), secondOffer(), finishGame
-    function refundMatch(address _otherPlayer)
+    // @dev Game can timeout at the offer or the response
+    function refundMatch(uint256 nonce)
+    public { 
+        Game storage thisGame = games[nonce];
+        require(thisGame.money != 0); 
+        // Proposer didn't respond?
+        if (thisGame.offer == 0){
+            require(thisGame.resultBlock + timeToRespond < block.number, "STILL HAS TIME TO RESPOND");
+            owed[thisGame.responder] += thisGame.money;  
+            delete games[nonce]; 
+        }
+        // Must be the responder
+        else {
+            require(thisGame.acceptDeadline < block.number, "STILL HAS TIME TO RESPOND"); 
+            owed[thisGame.proposer] += thisGame.money; 
+            delete games[nonce];
+        }
+    }
+
+function getGame(uint256 nonce)
     public 
-    returns (bool) { 
-        bytes32 pairHash = getPairHash(msg.sender, _otherPlayer); 
-        bytes32 otherPlayerHash = getVariableHashFor(pairHash, _otherPlayer);
-        bytes32 thisPlayerHash = getVariableHashFor(pairHash, msg.sender); 
-        // after requestMatch() 
-        if (requested[otherPlayerHash]) { 
-            require(!connected[pairHash]);
-            require(deadline[pairHash] < now);   // Make sure other players deadline is up
-            delete requested[otherPlayerHash]; 
-            credit(msg.sender, wager);     // Return users wager 
-            return true; 
-        }
-        // after firstOffer or second offer 
-        if (gameState[pairHash] == GameState.FirstMove || gameState[pairHash] == GameState.SecondMove){
-            require(deadline[pairHash] < now); 
-            if (offer[otherPlayerHash] == 0){
-                credit(msg.sender, wager); 
-                finishGame(pairHash, thisPlayerHash); 
-                return true;
-            }
-            else {
-                credit(_otherPlayer, wager); 
-                finishGame(pairHash, otherPlayerHash);
-                return true;
-            }
-        }
-        return false;
+    view 
+    returns (address, address, uint256, uint256, uint256, uint256){
+        Game storage g = games[nonce];
+        return (g.proposer, g.responder, g.offer, g.resultBlock, g.acceptDeadline, g.money); 
     }
 
-    function finishGame(bytes32 pairHash, bytes32 playerHash)
-    internal {
-        delete connected[pairHash];
-        delete offer[playerHash];
-        delete gameState[pairHash];
-    }
+    event LogNewGame(uint256 indexed nonce, address proposer, address responder);
+    event LogGameFinished(uint256 indexed nonce, bool accepted); 
 
-    function credit(address _a, uint _amount)
-    internal 
-    returns (bool) { 
-        owed[_a] = owed[_a].add(_amount); 
-        return true; 
-    }
 
-    // ------------------------------------------------------------------------
-    // @notice Finds the common shared hash of these two addresses
-    // @dev Use this to store shared game data between two addresses
-    // ------------------------------------------------------------------------
-    function getPairHash(address _a, address _b)
+    /// @dev Converts a numeric string to it's unsigned integer representation.
+    /// @param v The string to be converted.
+    function bytesToUInt(bytes32 v) 
     public
-    pure
-    returns (bytes32){
-        return (_a < _b) ? keccak256(abi.encodePacked(_a, _b)) :  keccak256(abi.encodePacked(_b, _a));
+    pure 
+    returns (uint ret) {
+        require(v != bytes32(0));
+        uint digit;
+
+        for (uint i = 0; i < 32; i++) {
+            digit = uint((uint(v) / (2 ** (8 * (31 - i)))) & 0xff);
+            if (digit == 0) {
+                break;
+            }
+            else if (digit < 48 || digit > 57) {
+                revert("BAD DIGIT");
+            }
+            ret *= 10;
+            ret += (digit - 48);
+        }
+        return ret;
     }
-
-    // ------------------------------------------------------------------------
-    // @notice returns the request hash corresponding to _pairHash and address _b 
-    // @dev Variables corresponding to address _b in pairHash(_a, _b)
-    // ------------------------------------------------------------------------
-    function getVariableHashFor(bytes32 _pairHash, address _user)
-    public
-    pure
-    returns (bytes32){
-        return keccak256(abi.encodePacked(_pairHash, _user));
-    }
-
-
-
-    // ------------------------------------------------------------------------
-    //  Events
-    // ------------------------------------------------------------------------
-    event LogWantingToPlay(address indexed _sender); 
-    event LogNewGame(bytes32 indexed pairHash, address indexed initiator, address indexed acceptor, uint firstOffer);
-    event LogOfferReturned(bytes32 indexed id, address player, uint returnOffer, bool accepted, uint amountAccepted); 
-    event LogGameFinished(bytes32 indexed id, address player, bool accepted, uint amountAccepted); 
-    event LogGameRequest(address indexed _to, address indexed _initiator); 
-
 }
-

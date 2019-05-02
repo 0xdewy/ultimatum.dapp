@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "antd": "^3.16.6",
+    "ethereum-blockies-base64": "^1.0.2",
     "react": "^16.6.3",
     "react-dom": "^16.6.3",
     "react-scripts": "2.1.1",
-    "web3": "^1.0.0-beta.37"
+    "sweetalert": "^2.1.2",
+    "web3": "^1.0.0-beta.37",
+    "web3-utils": "^1.0.0-beta.52"
   },
   "scripts": {
     "start": "react-scripts start",

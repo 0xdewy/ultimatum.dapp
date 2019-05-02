@@ -1,25 +1,16 @@
 {
-  "name": "ultimatum",
+  "name": "ult.box",
   "version": "1.0.0",
-  "description": "Game theory game to see how two people split a pool of money",
-  "main": "truffle-config.js",
-  "directories": {
-    "test": "test"
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "cd client && yarn start"
   },
   "dependencies": {
-    "bignumber.js": "^8.1.1",
-    "truffle-hdwallet-provider": "^1.0.6"
-  },
-  "devDependencies": {},
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [
-    "ethereum",
-    "dapp",
-    "ultimatum",
-    "truffle-box"
-  ],
-  "author": "Kyle Dewhurst",
-  "license": "MIT"
+    "bootstrap": "^4.3.1",
+    "chai": "^4.2.0",
+    "openzeppelin-test-helpers": "^0.3.2",
+    "react-scripts": "2.1.1",
+    "truffle": "^5.0.14"
+  }
 }
