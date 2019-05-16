@@ -1,4 +1,13 @@
 const path = require("path");
+const HDWalletProvider = require('truffle-hdwallet-provider');
+require('dotenv').config({ path: '.env' });
+
+
+const infuraKey = process.env.INFURA;
+const privKey = process.env.KEY;
+
+
+
 
 module.exports = {
     // See <http://truffleframework.com/docs/advanced/configuration>
@@ -19,17 +28,16 @@ module.exports = {
         },
         // Useful for deploying to a public network.
         // NB: It's important to wrap the provider as a function.
-        // ropsten: {
-        //     provider: () => new HDWalletProvider(mnemonic, `https://ropsten.infura.io/v3/${infuraKey}`),
-        //     from: "0x501F53470E9C8AEa0DC06549EF0e4bA7103aa707",
-        //     network_id: 3,       // Ropsten's id
-        //     gas: 5500000,        // Ropsten has a lower block limit than mainnet
-        //     confirmations: 2,    // # of confs to wait between deployments. (default: 0)
-        //     timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
-        //     skipDryRun: false     // Skip dry run before migrations? (default: false for public nets )
-        // },
+        ropsten: {
+            provider: () => new HDWalletProvider(privKey, `https://ropsten.infura.io/v3/${infuraKey}`),
+            network_id: 3,       // Ropsten's id
+            // gas: 5500000,        // Ropsten has a lower block limit than mainnet
+            // confirmations: 2,    // # of confs to wait between deployments. (default: 0)
+            // timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
+            skipDryRun: true     // Skip dry run before migrations? (default: false for public nets )
+        },
         rinkeby: {
-            provider: () => new HDWalletProvider(mnemonic, `https://rinkeby.infura.io/${infuraKey}`, 0),
+            provider: () => new HDWalletProvider(privKey, `https://rinkeby.infura.io/${infuraKey}`, 0),
             network_id: 4,       // Ropsten's id
             // gas: 5500000,        // Ropsten has a lower block limit than mainnet
             // confirmations: 2,    // # of confs to wait between deployments. (default: 0)

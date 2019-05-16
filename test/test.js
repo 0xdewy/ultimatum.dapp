@@ -114,6 +114,8 @@ contract('Ultimatum', function (accounts) {
     });
 
     it('player1 wants to play', async () => {
+        console.log("Player A ", playerA);
+        console.log("WAGER ", wager);
         await ultimatum.play({ from: playerA, value: wager });
         gameO.nonce = await ultimatum.gameNonce();
         eq(gameO.nonce, 1);
